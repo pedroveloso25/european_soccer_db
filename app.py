@@ -326,7 +326,7 @@ elif pagina == "📊 Análises":
     st.subheader("📊 Análises")
 
     analise = st.selectbox("Escolha a análise", [
-        "🥅 Artilheiros por temporada e liga",
+        "🥅 Gols marcados por time",
         "⚡ Top jogadores por atributo",
         "🏆 Classificação de times (vitórias/derrotas)",
         "📅 Partidas de um time específico",
@@ -342,7 +342,7 @@ elif pagina == "📊 Análises":
     league_map = {l[1]: l[0] for l in leagues}
 
     # ── Artilheiros ────────────────────────────────────────────────────────────
-    if analise == "🥅 Artilheiros por temporada e liga":
+    if analise == "🥅 Gols marcados por time":
         st.info("Gols somados por time como mandante e visitante.")
         c1, c2 = st.columns(2)
         season = c1.selectbox("Temporada", seasons)
