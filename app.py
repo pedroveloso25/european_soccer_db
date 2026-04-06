@@ -1,5 +1,6 @@
 import streamlit as st
 from sqlalchemy import create_engine, text
+import datetime
 
 # ── Conexão ────────────────────────────────────────────────────────────────────
 DATABASE_URL = "postgresql://neondb_owner:npg_0UWcJ7XLIotb@ep-holy-grass-amcai7dk-pooler.c-5.us-east-1.aws.neon.tech/neondb?sslmode=require&channel_binding=require"
@@ -70,7 +71,12 @@ elif pagina == "👤 Players":
     with aba[1]:
         with st.form("form_insert_player"):
             nome     = st.text_input("Nome do jogador")
-            birthday = st.date_input("Data de nascimento")
+            birthday = st.date_input(
+                "Data de nascimento",
+                value=datetime.date(1990, 1, 1),
+                min_value=datetime.date(1950, 1, 1),
+                max_value=datetime.date(2005, 1, 1)
+            )
             height   = st.number_input("Altura (cm)", min_value=0)
             weight   = st.number_input("Peso (lbs)", min_value=0)
             if st.form_submit_button("💾 Salvar"):
@@ -88,11 +94,18 @@ elif pagina == "👤 Players":
             r = st.session_state["edit_player"]
             with st.form("form_edit_player"):
                 nome   = st.text_input("Nome", value=r[0])
+                birthday_val = r[1] if isinstance(r[1], datetime.date) else datetime.date(1990, 1, 1)
+                birthday = st.date_input(
+                    "Data de nascimento",
+                    value=birthday_val,
+                    min_value=datetime.date(1950, 1, 1),
+                    max_value=datetime.date(2005, 1, 1)
+                )
                 height = st.number_input("Altura", value=int(r[2]) if r[2] else 0)
                 weight = st.number_input("Peso",   value=int(r[3]) if r[3] else 0)
                 if st.form_submit_button("✏️ Atualizar"):
-                    query("UPDATE player SET player_name=:n, height=:h, weight=:w WHERE id=:id",
-                          {"n": nome, "h": int(height), "w": int(weight), "id": pid})
+                    query("UPDATE player SET player_name=:n, birthday=:b, height=:h, weight=:w WHERE id=:id",
+                          {"n": nome, "b": str(birthday), "h": int(height), "w": int(weight), "id": pid})
                     st.success("Jogador atualizado!")
                     del st.session_state["edit_player"]
 
@@ -222,7 +235,7 @@ elif pagina == "🏆 Leagues":
             st.info("Digite um ID válido.")
 
 # ══════════════════════════════════════════════════════════════════════════════
-# MATCHES  (JOIN corrigido: team_api_id::bigint)
+# MATCHES
 # ══════════════════════════════════════════════════════════════════════════════
 elif pagina == "⚽ Matches":
     st.subheader("⚽ Matches")
@@ -267,7 +280,12 @@ elif pagina == "⚽ Matches":
         team_map   = {t[1]: t[0] for t in teams}
         league_map = {l[1]: l[0] for l in leagues}
         with st.form("form_insert_match"):
-            data       = st.date_input("Data da partida")
+            data       = st.date_input(
+                "Data da partida",
+                value=datetime.date(2015, 8, 1),
+                min_value=datetime.date(2008, 1, 1),
+                max_value=datetime.date(2016, 12, 31)
+            )
             season_new = st.text_input("Temporada", value="2015/2016")
             liga       = st.selectbox("Liga", list(league_map.keys()))
             mandante   = st.selectbox("Time Mandante",  list(team_map.keys()))
@@ -341,7 +359,6 @@ elif pagina == "📊 Análises":
     leagues    = query("SELECT id, name FROM league ORDER BY name")
     league_map = {l[1]: l[0] for l in leagues}
 
-    # ── Artilheiros ────────────────────────────────────────────────────────────
     if analise == "🥅 Gols marcados por time":
         st.info("Gols somados por time como mandante e visitante.")
         c1, c2 = st.columns(2)
@@ -363,7 +380,6 @@ elif pagina == "📊 Análises":
         st.dataframe(rows, use_container_width=True)
         st.bar_chart(rows.set_index("Time")["Gols"])
 
-    # ── Top por atributo ───────────────────────────────────────────────────────
     elif analise == "⚡ Top jogadores por atributo":
         atributos = ["overall_rating", "potential", "crossing", "finishing",
                      "dribbling", "sprint_speed", "stamina", "strength",
@@ -384,7 +400,6 @@ elif pagina == "📊 Análises":
         st.dataframe(rows, use_container_width=True)
         st.bar_chart(rows.set_index("Jogador")["Valor"])
 
-    # ── Classificação ──────────────────────────────────────────────────────────
     elif analise == "🏆 Classificação de times (vitórias/derrotas)":
         c1, c2 = st.columns(2)
         season = c1.selectbox("Temporada", seasons)
@@ -419,7 +434,6 @@ elif pagina == "📊 Análises":
                             "Gols Pró","Gols Contra","Saldo","Pontos"]],
                      use_container_width=True)
 
-    # ── Partidas de um time ────────────────────────────────────────────────────
     elif analise == "📅 Partidas de um time específico":
         teams    = [r[0] for r in query("SELECT team_long_name FROM team ORDER BY team_long_name")]
         c1, c2   = st.columns(2)
@@ -450,7 +464,6 @@ elif pagina == "📊 Análises":
         else:
             st.info("Nenhuma partida encontrada.")
 
-    # ── Jogos com mais gols ────────────────────────────────────────────────────
     elif analise == "🔥 Jogos com mais gols":
         season = st.selectbox("Temporada", seasons)
         top_n  = st.slider("Top N jogos", 5, 30, 10)
@@ -471,7 +484,6 @@ elif pagina == "📊 Análises":
         """, {"s": season, "n": top_n})
         st.dataframe(rows, use_container_width=True)
 
-    # ── Média de gols ──────────────────────────────────────────────────────────
     elif analise == "📈 Média de gols por temporada e liga":
         liga = st.selectbox("Liga", list(league_map.keys()))
         rows = query_df("""
@@ -484,7 +496,6 @@ elif pagina == "📊 Análises":
         st.dataframe(rows, use_container_width=True)
         st.line_chart(rows.set_index("Temporada")["Média de Gols"])
 
-    # ── Pé preferido ──────────────────────────────────────────────────────────
     elif analise == "👟 Pé preferido dos jogadores":
         rows = query_df("""
             SELECT preferred_foot as "Pé", COUNT(*) as "Jogadores",
@@ -498,7 +509,6 @@ elif pagina == "📊 Análises":
         st.dataframe(rows, use_container_width=True)
         st.bar_chart(rows.set_index("Pé")["Jogadores"])
 
-    # ── Confronto direto ───────────────────────────────────────────────────────
     elif analise == "🆚 Confronto direto entre dois times":
         teams  = [r[0] for r in query("SELECT team_long_name FROM team ORDER BY team_long_name")]
         c1, c2 = st.columns(2)
@@ -530,7 +540,6 @@ elif pagina == "📊 Análises":
         else:
             st.info("Nenhum confronto encontrado entre esses times.")
 
-    # ── Evolução de atributo ───────────────────────────────────────────────────
     elif analise == "📊 Evolução de atributo de um jogador":
         atributos = ["overall_rating", "potential", "crossing", "finishing",
                      "dribbling", "sprint_speed", "stamina", "strength",
