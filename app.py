@@ -65,7 +65,7 @@ elif pagina == "👤 Players":
             "SELECT id, player_name, birthday, height, weight FROM player WHERE player_name ILIKE :q ORDER BY player_name LIMIT 50",
             {"q": f"%{busca}%"}
         ) if busca else query(
-            "SELECT id, player_name, birthday, height, weight FROM player ORDER BY id DESC LIMIT 50"
+            "SELECT id, player_name, birthday, height, weight FROM player ORDER BY id DESC NULLS LAST LIMIT 50"
         )
         st.dataframe([{"ID": r[0], "Nome": r[1], "Nascimento": r[2],
                        "Altura (cm)": r[3], "Peso (lbs)": r[4]} for r in rows],
@@ -87,48 +87,83 @@ elif pagina == "👤 Players":
                     st.error("O nome do jogador é obrigatório.")
                 else:
                     next_id = query("SELECT COALESCE(MAX(id), 0) + 1 FROM player")[0][0]
-                    query("""INSERT INTO player (player_api_id, player_name, birthday, height, weight)
-                             VALUES (:api, :n, :b, :h, :w)""",
-                          {"api": str(next_id), "n": nome.strip(),
+                    query("""INSERT INTO player (id, player_api_id, player_name, birthday, height, weight)
+                             VALUES (:id, :api, :n, :b, :h, :w)""",
+                          {"id": next_id, "api": str(next_id), "n": nome.strip(),
                            "b": str(birthday), "h": int(height), "w": int(weight)})
-                    st.success(f"Jogador **{nome}** inserido!")
+                    st.success(f"Jogador **{nome}** inserido com ID {next_id}!")
 
     with aba[2]:
-        pid = st.number_input("ID do jogador a editar", min_value=1, step=1)
+        st.caption("Busque por nome ou ID")
+        col1, col2 = st.columns(2)
+        busca_edit = col1.text_input("Nome do jogador", key="edit_player_nome")
+        pid_edit   = col2.number_input("ou ID exato", min_value=0, step=1, key="edit_player_id")
+
         if st.button("Buscar jogador"):
-            r = query("SELECT player_name, birthday, height, weight FROM player WHERE id=:id", {"id": pid})
-            st.session_state["edit_player"] = r[0] if r else None
+            if busca_edit:
+                r = query("SELECT id, player_name, birthday, height, weight FROM player WHERE player_name ILIKE :q ORDER BY id DESC NULLS LAST LIMIT 10",
+                          {"q": f"%{busca_edit}%"})
+            elif pid_edit > 0:
+                r = query("SELECT id, player_name, birthday, height, weight FROM player WHERE id=:id", {"id": pid_edit})
+            else:
+                r = []
+            st.session_state["edit_player_results"] = r if r else None
             if not r:
                 st.error("Jogador não encontrado.")
-        if st.session_state.get("edit_player"):
-            r = st.session_state["edit_player"]
+
+        if st.session_state.get("edit_player_results"):
+            results = st.session_state["edit_player_results"]
+            opcoes  = {f"[ID: {r[0]}] {r[1]}": r for r in results}
+            escolha = st.selectbox("Selecionar jogador", list(opcoes.keys()), key="edit_player_escolha")
+            r       = opcoes[escolha]
             with st.form("form_edit_player"):
-                nome = st.text_input("Nome", value=r[0])
-                birthday_val = r[1] if isinstance(r[1], datetime.date) else datetime.date(1990, 1, 1)
+                nome = st.text_input("Nome", value=r[1])
+                birthday_val = r[2] if isinstance(r[2], datetime.date) else datetime.date(1990, 1, 1)
                 birthday = st.date_input(
                     "Data de nascimento",
                     value=birthday_val,
                     min_value=datetime.date(1950, 1, 1),
                     max_value=datetime.date(2005, 1, 1)
                 )
-                height = st.number_input("Altura (cm)", value=int(r[2]) if r[2] else 0)
-                weight = st.number_input("Peso (lbs)",  value=int(r[3]) if r[3] else 0)
+                height = st.number_input("Altura (cm)", value=int(r[3]) if r[3] else 0)
+                weight = st.number_input("Peso (lbs)",  value=int(r[4]) if r[4] else 0)
                 if st.form_submit_button("✏️ Atualizar"):
-                    query("UPDATE player SET player_name=:n, birthday=:b, height=:h, weight=:w WHERE id=:id",
-                          {"n": nome, "b": str(birthday), "h": int(height), "w": int(weight), "id": pid})
+                    query("UPDATE player SET player_name=:n, birthday=:b, height=:h, weight=:w WHERE player_name=:old",
+                          {"n": nome, "b": str(birthday), "h": int(height), "w": int(weight), "old": r[1]})
                     st.success("Jogador atualizado!")
-                    del st.session_state["edit_player"]
+                    del st.session_state["edit_player_results"]
 
     with aba[3]:
-        pid_del = st.number_input("ID do jogador a deletar", min_value=1, step=1, key="del_player")
-        r = query("SELECT player_name FROM player WHERE id=:id", {"id": pid_del})
-        if r:
-            st.warning(f"Deletar: **{r[0][0]}**")
+        st.caption("Busque por nome ou ID")
+        col1, col2 = st.columns(2)
+        busca_del = col1.text_input("Nome do jogador", key="del_player_nome")
+        pid_del   = col2.number_input("ou ID exato", min_value=0, step=1, key="del_player_id")
+
+        if st.button("Buscar para deletar"):
+            if busca_del:
+                r = query("SELECT id, player_name FROM player WHERE player_name ILIKE :q ORDER BY id DESC NULLS LAST LIMIT 10",
+                          {"q": f"%{busca_del}%"})
+            elif pid_del > 0:
+                r = query("SELECT id, player_name FROM player WHERE id=:id", {"id": pid_del})
+            else:
+                r = []
+            st.session_state["del_player_results"] = r if r else None
+            if not r:
+                st.error("Jogador não encontrado.")
+
+        if st.session_state.get("del_player_results"):
+            results = st.session_state["del_player_results"]
+            opcoes  = {f"[ID: {r[0]}] {r[1]}": r for r in results}
+            escolha = st.selectbox("Selecionar jogador", list(opcoes.keys()), key="del_player_escolha")
+            r       = opcoes[escolha]
+            st.warning(f"Deletar: **{r[1]}** (ID: {r[0]})")
             if st.button("🗑️ Confirmar exclusão", key="btn_del_player"):
-                query("DELETE FROM player WHERE id=:id", {"id": pid_del})
+                if r[0] is not None:
+                    query("DELETE FROM player WHERE id=:id", {"id": r[0]})
+                else:
+                    query("DELETE FROM player WHERE player_name=:n AND id IS NULL", {"n": r[1]})
                 st.success("Jogador deletado!")
-        else:
-            st.info("Digite um ID válido.")
+                del st.session_state["del_player_results"]
 
 # ══════════════════════════════════════════════════════════════════════════════
 # TEAMS
@@ -143,7 +178,7 @@ elif pagina == "🏟️ Teams":
             "SELECT id, team_long_name, team_short_name FROM team WHERE team_long_name ILIKE :q ORDER BY team_long_name LIMIT 50",
             {"q": f"%{busca}%"}
         ) if busca else query(
-            "SELECT id, team_long_name, team_short_name FROM team ORDER BY team_long_name LIMIT 50"
+            "SELECT id, team_long_name, team_short_name FROM team ORDER BY id DESC NULLS LAST LIMIT 50"
         )
         st.dataframe([{"ID": r[0], "Nome": r[1], "Abrev.": r[2]} for r in rows],
                      use_container_width=True)
@@ -156,38 +191,74 @@ elif pagina == "🏟️ Teams":
                 if not nome_longo.strip():
                     st.error("O nome do time é obrigatório.")
                 else:
-                    query("INSERT INTO team (team_long_name, team_short_name) VALUES (:n,:s)",
-                          {"n": nome_longo.strip(), "s": nome_curto.strip()})
+                    next_id = query("SELECT COALESCE(MAX(id), 0) + 1 FROM team")[0][0]
+                    query("INSERT INTO team (id, team_long_name, team_short_name) VALUES (:id,:n,:s)",
+                          {"id": next_id, "n": nome_longo.strip(), "s": nome_curto.strip()})
                     st.success(f"Time **{nome_longo}** inserido!")
 
     with aba[2]:
-        tid = st.number_input("ID do time a editar", min_value=1, step=1)
+        st.caption("Busque por nome ou ID")
+        col1, col2 = st.columns(2)
+        busca_edit = col1.text_input("Nome do time", key="edit_team_nome")
+        tid_edit   = col2.number_input("ou ID exato", min_value=0, step=1, key="edit_team_id")
+
         if st.button("Buscar time"):
-            r = query("SELECT team_long_name, team_short_name FROM team WHERE id=:id", {"id": tid})
-            st.session_state["edit_team"] = r[0] if r else None
+            if busca_edit:
+                r = query("SELECT id, team_long_name, team_short_name FROM team WHERE team_long_name ILIKE :q ORDER BY id DESC NULLS LAST LIMIT 10",
+                          {"q": f"%{busca_edit}%"})
+            elif tid_edit > 0:
+                r = query("SELECT id, team_long_name, team_short_name FROM team WHERE id=:id", {"id": tid_edit})
+            else:
+                r = []
+            st.session_state["edit_team_results"] = r if r else None
             if not r:
                 st.error("Time não encontrado.")
-        if st.session_state.get("edit_team"):
-            r = st.session_state["edit_team"]
+
+        if st.session_state.get("edit_team_results"):
+            results = st.session_state["edit_team_results"]
+            opcoes  = {f"[ID: {r[0]}] {r[1]}": r for r in results}
+            escolha = st.selectbox("Selecionar time", list(opcoes.keys()), key="edit_team_escolha")
+            r       = opcoes[escolha]
             with st.form("form_edit_team"):
-                nome_longo = st.text_input("Nome completo", value=r[0])
-                nome_curto = st.text_input("Abreviação",    value=r[1] or "")
+                nome_longo = st.text_input("Nome completo", value=r[1])
+                nome_curto = st.text_input("Abreviação",    value=r[2] or "")
                 if st.form_submit_button("✏️ Atualizar"):
-                    query("UPDATE team SET team_long_name=:n, team_short_name=:s WHERE id=:id",
-                          {"n": nome_longo, "s": nome_curto, "id": tid})
+                    query("UPDATE team SET team_long_name=:n, team_short_name=:s WHERE team_long_name=:old",
+                          {"n": nome_longo, "s": nome_curto, "old": r[1]})
                     st.success("Time atualizado!")
-                    del st.session_state["edit_team"]
+                    del st.session_state["edit_team_results"]
 
     with aba[3]:
-        tid_del = st.number_input("ID do time a deletar", min_value=1, step=1, key="del_team")
-        r = query("SELECT team_long_name FROM team WHERE id=:id", {"id": tid_del})
-        if r:
-            st.warning(f"Deletar: **{r[0][0]}**")
+        st.caption("Busque por nome ou ID")
+        col1, col2 = st.columns(2)
+        busca_del = col1.text_input("Nome do time", key="del_team_nome")
+        tid_del   = col2.number_input("ou ID exato", min_value=0, step=1, key="del_team_id")
+
+        if st.button("Buscar time para deletar"):
+            if busca_del:
+                r = query("SELECT id, team_long_name FROM team WHERE team_long_name ILIKE :q ORDER BY id DESC NULLS LAST LIMIT 10",
+                          {"q": f"%{busca_del}%"})
+            elif tid_del > 0:
+                r = query("SELECT id, team_long_name FROM team WHERE id=:id", {"id": tid_del})
+            else:
+                r = []
+            st.session_state["del_team_results"] = r if r else None
+            if not r:
+                st.error("Time não encontrado.")
+
+        if st.session_state.get("del_team_results"):
+            results = st.session_state["del_team_results"]
+            opcoes  = {f"[ID: {r[0]}] {r[1]}": r for r in results}
+            escolha = st.selectbox("Selecionar time", list(opcoes.keys()), key="del_team_escolha")
+            r       = opcoes[escolha]
+            st.warning(f"Deletar: **{r[1]}** (ID: {r[0]})")
             if st.button("🗑️ Confirmar exclusão", key="btn_del_team"):
-                query("DELETE FROM team WHERE id=:id", {"id": tid_del})
+                if r[0] is not None:
+                    query("DELETE FROM team WHERE id=:id", {"id": r[0]})
+                else:
+                    query("DELETE FROM team WHERE team_long_name=:n AND id IS NULL", {"n": r[1]})
                 st.success("Time deletado!")
-        else:
-            st.info("Digite um ID válido.")
+                del st.session_state["del_team_results"]
 
 # ══════════════════════════════════════════════════════════════════════════════
 # LEAGUES
@@ -214,43 +285,79 @@ elif pagina == "🏆 Leagues":
                 if not nome.strip():
                     st.error("O nome da liga é obrigatório.")
                 else:
-                    query("INSERT INTO league (name, country_id) VALUES (:n,:c)",
-                          {"n": nome.strip(), "c": country_map[country]})
+                    next_id = query("SELECT COALESCE(MAX(id), 0) + 1 FROM league")[0][0]
+                    query("INSERT INTO league (id, name, country_id) VALUES (:id,:n,:c)",
+                          {"id": next_id, "n": nome.strip(), "c": country_map[country]})
                     st.success(f"Liga **{nome}** inserida!")
 
     with aba[2]:
-        lid = st.number_input("ID da liga a editar", min_value=1, step=1)
+        st.caption("Busque por nome ou ID")
+        col1, col2 = st.columns(2)
+        busca_edit = col1.text_input("Nome da liga", key="edit_league_nome")
+        lid_edit   = col2.number_input("ou ID exato", min_value=0, step=1, key="edit_league_id")
+
         if st.button("Buscar liga"):
-            r = query("SELECT name, country_id FROM league WHERE id=:id", {"id": lid})
-            st.session_state["edit_league"] = r[0] if r else None
+            if busca_edit:
+                r = query("SELECT id, name, country_id FROM league WHERE name ILIKE :q ORDER BY id LIMIT 10",
+                          {"q": f"%{busca_edit}%"})
+            elif lid_edit > 0:
+                r = query("SELECT id, name, country_id FROM league WHERE id=:id", {"id": lid_edit})
+            else:
+                r = []
+            st.session_state["edit_league_results"] = r if r else None
             if not r:
                 st.error("Liga não encontrada.")
-        if st.session_state.get("edit_league"):
-            r           = st.session_state["edit_league"]
+
+        if st.session_state.get("edit_league_results"):
+            results     = st.session_state["edit_league_results"]
+            opcoes      = {f"[ID: {r[0]}] {r[1]}": r for r in results}
+            escolha     = st.selectbox("Selecionar liga", list(opcoes.keys()), key="edit_league_escolha")
+            r           = opcoes[escolha]
             countries   = query("SELECT id, name FROM country ORDER BY name")
             country_map = {c[1]: c[0] for c in countries}
             country_rev = {c[0]: c[1] for c in countries}
-            current     = country_rev.get(r[1], list(country_map.keys())[0])
+            current     = country_rev.get(r[2], list(country_map.keys())[0])
             with st.form("form_edit_league"):
-                nome    = st.text_input("Nome", value=r[0])
+                nome    = st.text_input("Nome", value=r[1])
                 country = st.selectbox("País", list(country_map.keys()),
                                        index=list(country_map.keys()).index(current))
                 if st.form_submit_button("✏️ Atualizar"):
-                    query("UPDATE league SET name=:n, country_id=:c WHERE id=:id",
-                          {"n": nome, "c": country_map[country], "id": lid})
+                    query("UPDATE league SET name=:n, country_id=:c WHERE name=:old",
+                          {"n": nome, "c": country_map[country], "old": r[1]})
                     st.success("Liga atualizada!")
-                    del st.session_state["edit_league"]
+                    del st.session_state["edit_league_results"]
 
     with aba[3]:
-        lid_del = st.number_input("ID da liga a deletar", min_value=1, step=1, key="del_league")
-        r = query("SELECT name FROM league WHERE id=:id", {"id": lid_del})
-        if r:
-            st.warning(f"Deletar: **{r[0][0]}**")
+        st.caption("Busque por nome ou ID")
+        col1, col2 = st.columns(2)
+        busca_del = col1.text_input("Nome da liga", key="del_league_nome")
+        lid_del   = col2.number_input("ou ID exato", min_value=0, step=1, key="del_league_id")
+
+        if st.button("Buscar liga para deletar"):
+            if busca_del:
+                r = query("SELECT id, name FROM league WHERE name ILIKE :q ORDER BY id LIMIT 10",
+                          {"q": f"%{busca_del}%"})
+            elif lid_del > 0:
+                r = query("SELECT id, name FROM league WHERE id=:id", {"id": lid_del})
+            else:
+                r = []
+            st.session_state["del_league_results"] = r if r else None
+            if not r:
+                st.error("Liga não encontrada.")
+
+        if st.session_state.get("del_league_results"):
+            results = st.session_state["del_league_results"]
+            opcoes  = {f"[ID: {r[0]}] {r[1]}": r for r in results}
+            escolha = st.selectbox("Selecionar liga", list(opcoes.keys()), key="del_league_escolha")
+            r       = opcoes[escolha]
+            st.warning(f"Deletar: **{r[1]}** (ID: {r[0]})")
             if st.button("🗑️ Confirmar exclusão", key="btn_del_league"):
-                query("DELETE FROM league WHERE id=:id", {"id": lid_del})
+                if r[0] is not None:
+                    query("DELETE FROM league WHERE id=:id", {"id": r[0]})
+                else:
+                    query("DELETE FROM league WHERE name=:n AND id IS NULL", {"n": r[1]})
                 st.success("Liga deletada!")
-        else:
-            st.info("Digite um ID válido.")
+                del st.session_state["del_league_results"]
 
 # ══════════════════════════════════════════════════════════════════════════════
 # MATCHES
@@ -315,10 +422,11 @@ elif pagina == "⚽ Matches":
                 if mandante == visitante:
                     st.error("O time mandante e visitante não podem ser o mesmo.")
                 else:
-                    query("""INSERT INTO match (date, season, league_id, home_team_api_id,
+                    next_id = query("SELECT COALESCE(MAX(id), 0) + 1 FROM match")[0][0]
+                    query("""INSERT INTO match (id, date, season, league_id, home_team_api_id,
                              away_team_api_id, home_team_goal, away_team_goal)
-                             VALUES (:d,:s,:l,:h,:a,:hg,:ag)""",
-                          {"d": str(data), "s": season_new, "l": league_map[liga],
+                             VALUES (:id,:d,:s,:l,:h,:a,:hg,:ag)""",
+                          {"id": next_id, "d": str(data), "s": season_new, "l": league_map[liga],
                            "h": team_map[mandante], "a": team_map[visitante],
                            "hg": int(gols_m), "ag": int(gols_v)})
                     st.success("Partida inserida!")
